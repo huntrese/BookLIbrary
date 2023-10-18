@@ -1,79 +1,79 @@
 from selenium.webdriver.common.by import By
-from selenium.webdriver.firefox.options import Options
+from selenium.webdriver.edge.options import Options
 from selenium import webdriver
-
+from bs4 import BeautifulSoup
 import time
-import retrying  # Import the retrying library
+import threading
+import queue
+from scrape import main
 
-# Define a retry decorator
-@retrying.retry(
-    stop_max_attempt_number=3,  # Number of retries
-    wait_fixed=1000  # Time to wait (in milliseconds) between retries
-)
-def initialize_webdriver():
-    # Initialize a Selenium webdriver with Firefox options
-    firefox_options = Options()
-    firefox_options.add_argument('--headless')
-    driver = webdriver.Firefox(options=firefox_options)
-    return driver
+# Create a thread-safe queue to hold book URLs
+book_urls = queue.Queue()
 
-def extract_chapters_and_book_name(base_url):
-    # Function to generate chapter links
-    def generate_chapter_links(base_url):
-        chapter_links = []
-        for i in range(1, 11):  # Iterate from 1 to 10
-            chapter_url = f"{base_url[:-1]}-{i}"  # Append the chapter number
-            chapter_links.append(chapter_url)
-        return chapter_links
+# Extract book URL, image URL, and book name
+def scrapeBookInfo():
+    info = []
 
-    try:
-        # Initialize the WebDriver with retries
-        driver = initialize_webdriver()
+    def initialize_webdriver():
+        # Initialize a Selenium webdriver with Firefox options
+        firefox_options = Options()
+        firefox_options.add_argument('--headless')
+        driver = webdriver.Edge(options=firefox_options)
+        return driver
 
-        time.sleep(1.5)
-        driver.get(base_url)
-        found_href = None  # To store the href when found
-        image_src = None  # To store the image source
-        author_name = None  # To store the author's name
+    def extract_chapters_and_book_info(driver, book_url, book_name, img_url):
+        time.sleep(0.5)
+        driver.get(book_url)
 
-        # Find all div elements matching the given styling
-        div_elements = driver.find_elements(By.CSS_SELECTOR, 'div[class*="mt-[16px]"]')
+        # Find the div element with class "list-chapter"
+        div_element = driver.find_element(By.CSS_SELECTOR, 'ul.list-chapter')
 
-        # Find the image element and get the src attribute
-        img_element = driver.find_element(By.CSS_SELECTOR, 'img.absolute.top-0.left-0')
-        image_src = img_element.get_attribute('src')
+        # Find all list items within the div
+        li_elements = div_element.find_elements(By.TAG_NAME, 'li')
 
-        # Find the author's name element
-        author_element = driver.find_element(By.CSS_SELECTOR, 'div.font-set-sb15.break-word.line-clamp-1.sm2\\:font-set-sb15')
-        author_name = author_element.text.strip()
+        # Extract chapter links
+        chapter_links = [li.find_element(By.TAG_NAME, 'a').get_attribute('href') for li in li_elements]
 
-        # Loop through the matching div elements
-        for div_element in div_elements:
-            try:
-                # Find the anchor element within the div
-                a_element = div_element.find_element(By.TAG_NAME, 'a')
+        author_name = driver.find_element(By.XPATH, "//div[@class='info']//h3[text()='Author:']/following-sibling::a").text
 
-                # Get the href attribute of the anchor element
-                href = a_element.get_attribute('href')
+        # Extract book description
+        description_element = driver.find_element(By.CSS_SELECTOR, 'div.desc-text')
+        description_inner_html = description_element.get_attribute('innerHTML')
 
-                if href:
-                    found_href = href
-                    break  # Stop searching once href is found
-            except:
-                pass  # Continue searching if the element is not found
+        return book_name, img_url, author_name, description_inner_html, chapter_links
 
-        if found_href:
-            # Split the URL and replace the chapter number iteratively
-            base_parts = found_href.split("-")
-            book_name = found_href.split('/')[4]
+    def scrape_book_info_thread():
+        while not book_urls.empty():
+            book_url, book_name, img_url = book_urls.get()
+            driver = initialize_webdriver()
+            book_name, img_url, author_name, description_text, chapter_links = extract_chapters_and_book_info(driver, book_url, book_name, img_url)
+            driver.quit()
+            
+            info.append([book_name, book_url, img_url, author_name, description_text, chapter_links])
 
-            chapter_links = generate_chapter_links('-'.join(base_parts[:-2]) + '-chapter-')
-            return book_name, chapter_links, image_src, author_name
-        else:
-            return None, [], image_src, author_name
+    # Example usage:
+    book_info = main()
 
-    finally:
-        driver.quit()
+    for i in book_info:
+        book_url = i[0]
+        img_url = i[1]
+        book_name = i[2]
+        book_urls.put((book_url, book_name, img_url))
 
+    # Create and start multiple threads to scrape book information in parallel
+    num_threads = 10  # You can adjust the number of threads as needed
+    threads = []
+    for _ in range(num_threads):
+        thread = threading.Thread(target=scrape_book_info_thread)
+        threads.append(thread)
+        thread.start()
 
+    # Wait for all threads to finish
+    for thread in threads:
+        thread.join()
 
+    return info
+
+if __name__ == '__main__':
+    scraped_info = scrapeBookInfo()
+    # Process the scraped data as needed
