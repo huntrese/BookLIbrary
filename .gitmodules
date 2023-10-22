@@ -1,0 +1,3 @@
+[submodule "Ebooks"]
+	path = Ebooks
+	url = https://github.com/huntrese/Ebooks.git
