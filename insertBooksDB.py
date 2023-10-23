@@ -1,6 +1,6 @@
 import os
 import pymysql
-import shutil
+import natsort
 # MySQL database connection settings
 db_host = "localhost"
 db_user = "root"
@@ -33,7 +33,7 @@ def insert_book_and_chapters(book_name, author_name, description, cover_image_pa
         # Insert data for each chapter
         for chapter_file in chapter_files:
             # Extract the chapter name from the file name (assuming file names are like "chapter_name.txt")
-            chapter_name = os.path.basename(chapter_file).split(".")[0][:45]
+            chapter_name = os.path.basename(chapter_file).split(".")[0][:95]
             # print(i,type(i))
             with open(chapter_file, "r", encoding="utf-8") as file:
                 chapter_text = file.read()
@@ -56,7 +56,7 @@ for dir_name in os.listdir(data_folder):
         author_file = os.path.join(dir_path, "author.txt")
         cover_file = os.path.join(dir_path, "cover.jpg")
         description_file = os.path.join(dir_path, "description.txt")
-        chapter_files = [os.path.join(dir_path, file) for file in os.listdir(dir_path) if file.startswith("Chapter")]
+        chapter_files = natsort.natsorted([os.path.join(dir_path, file) for file in os.listdir(dir_path) if file.startswith("Chapter")])
 
         if os.path.exists(author_file) and os.path.exists(cover_file) and os.path.exists(description_file) and chapter_files:
             with open(author_file, "r", encoding="utf-8") as file:
